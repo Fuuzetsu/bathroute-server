@@ -30,6 +30,7 @@ import           Data.Conduit.Network
 import qualified Data.Conduit.Text as CT
 import           Data.Text (toUpper)
 
+
 -- | When a user requests a new alias, we decode it to this data type which
 -- we later verify the signature of.
 data AliasRequest =
@@ -37,10 +38,11 @@ data AliasRequest =
                  -- ^ The new name that the user wishes to use.
                , aliasKey ∷ PublicKey
                  -- ^ The 'PublicKey' of the user.
-               , aliasSignature ∷ ByteString
-                 -- ^ The signed 'aliasName' that has to 'verify' using
-                 -- the 'aliasKey'. Given a user's PublicKey and the signed
-                 -- alias, we can be fairly confident that the alias request
-                 -- comes from owner of the key. This stops anyone from
-                 -- requesting aliases for other users.
                }
+
+data OnlineRequest =
+  OnlineRequest { onlineKey ∷ PublicKey
+                  -- ^ Key of the person coming online.
+                }
+
+$(deriveJSON defaultOptions ''PublicKey)
