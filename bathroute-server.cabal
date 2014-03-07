@@ -20,6 +20,6 @@ executable bathroute-server
                        esqueleto, network-conduit, conduit, text, bytestring,
                        filesystem-conduit, system-filepath, aeson, transformers,
                        crypto-api, binary, base64-bytestring, generic-deriving,
-                       syb, hashable, utf8-string
+                       syb, hashable, utf8-string, derive
   hs-source-dirs:      src
   default-language:    Haskell2010
