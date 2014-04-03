@@ -1,17 +1,20 @@
-{-# LANGUAGE UnicodeSyntax #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE NoMonomorphismRestriction #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE DeriveFunctor #-}
-{-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE DeriveFoldable #-}
+{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE DeriveTraversable #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE NoMonomorphismRestriction #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE UnicodeSyntax #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 -- |
@@ -52,6 +55,10 @@ import           Data.Text
 import qualified Data.Text.Encoding as TE
 import           Data.Traversable
 import           Data.Typeable
+-- import Database.Persist
+import Database.Persist.TH
+import qualified Database.Persist.Sqlite as S
+import Database.Persist.Quasi
 
 $(deriveJSON defaultOptions ''PublicKey)
 
@@ -60,6 +67,22 @@ $(deriveJSON defaultOptions ''PublicKey)
 newtype ByteString64 = ByteString64 { unByteString64 ∷ ByteString }
                      deriving (Eq, Read, Show, Data,
                                Typeable, Ord, Hashable)
+
+share [mkPersist sqlSettings, mkMigrate "migrateAll"] [persistLowerCase|
+  User
+    publickey ByteString
+    deriving Eq Show
+  Event
+    latitude Double
+    longitude Double
+    description String
+    creatorid UserId
+    deriving Eq Show
+  Alias
+    aliasid Int
+    ownerid UserId
+    deriving Eq Show
+|]
 
 -- | Lazy ByteString to Text
 strict :: LB.ByteString -> Text
@@ -88,7 +111,7 @@ instance FromJSON LB.ByteString where
     {-# INLINE parseJSON #-}
 
 instance ToJSON ByteString64 where
-  toJSON (ByteString64 bs) = toJSON (B64.encode bs)
+  toJSON (ByteString64 bps) = toJSON (B64.encode bps)
 
 instance FromJSON ByteString64 where
   parseJSON o =
@@ -99,40 +122,19 @@ data FriendAction = Add PublicKey | Remove PublicKey
                   | Block PublicKey | Share PublicKey
                   deriving (Eq, Show)
 
--- $(deriveJSON defaultOptions ''FriendAction)
-
--- -- | When a user requests a new alias, we decode it to this data type which
--- -- we later verify the signature of.
--- data AliasRequest =
---   AliasRequest { aliasName ∷ String
---                  -- ^ The new name that the user wishes to use.
---                }
---   deriving (Eq, Show)
-
--- $(deriveJSON defaultOptions ''AliasRequest)
-
 -- | User status change.
 data OnlineRequest = Online | Offline
                    deriving (Eq, Show)
 
+data AliasRequest = DesiredAlias String
+
 $(deriveJSON defaultOptions ''OnlineRequest)
+$(deriveJSON defaultOptions ''AliasRequest)
 
--- -- | Key of a person user wishes to interact with and an action describing
--- -- what they want to do.
--- data FriendRequest = FriendRequest { friendKey ∷ PublicKey
---                                    , friendAction ∷ FriendAction }
 
--- $(deriveJSON defaultOptions ''FriendRequest)
--- $(deriveJSON defaultOptions ''Request)
-
--- verify' ∷ Request ByteString
---         → Either (Either String RSAError) (Maybe ByteString64)
--- verify' req@(Request k r s m) = case B64.decode m of
---   Left e → Left $ Left e
---   Right s' → case verify k (LB.fromStrict m) (LB.fromStrict s') of
---     Left rsa → Left $ Right rsa
---     Right False → Right Nothing
---     Right True → Right $ Just m
+data Request = OnlineStatus OnlineRequest
+             | FriendStatus FriendAction
+             | AliasStatus AliasRequest
 
 
 data ServerComm = ServerComm { senderKey ∷ PublicKey
@@ -142,16 +144,15 @@ data ServerComm = ServerComm { senderKey ∷ PublicKey
                              , serverMessage ∷ ByteString
                              }
 
-data ServerMessage = ServerMessage { requestType ∷ RequestType
+data ServerMessage = ServerMessage { requestType ∷ Request
                                    , secretMessage ∷ ByteString
                                    , messageSignature ∷ ByteString
                                      -- ^ Signed contents of the message
                                    , messageRecipient ∷ PublicKey
                                    }
 
-data RequestType = OnlineChange | FriendChange
-
-$(derive makeBinary ''RequestType)
+$(derive makeBinary ''AliasRequest)
+$(derive makeBinary ''Request)
 $(derive makeBinary ''OnlineRequest)
 $(derive makeBinary ''FriendAction)
 
@@ -164,30 +165,3 @@ instance Binary ServerMessage where
   get = liftM4 ServerMessage get get get get
 
 type ServerKeys = (PublicKey, PrivateKey)
-
-data Request = OnlineStatus OnlineRequest | FriendStatus FriendAction
-
--- | Main decoder which takes care of decrypting and deserialising messages
-decodeMessage ∷ ServerKeys → ServerComm → Either String (PublicKey, Request)
-decodeMessage (spub, spriv) (ServerComm sendpub sendsig servmsg) =
-  -- First verify that thet the message server is getting is what's intended
-  case verify sendpub (LB.fromStrict servmsg) (LB.fromStrict sendsig) of
-    Left rsaerr → Left $ show rsaerr -- failed to decode properly
-    Right False → Left "Failed to verify signature on serverMessage"
-    Right True → case decrypt spriv (LB.fromStrict servmsg) of
-      Left rsaerr → Left $ show rsaerr
-      Right xs →
-        let ServerMessage t ms sig r = B.decode xs
-        in case verify sendpub (LB.fromStrict sig) (LB.fromStrict ms) of
-          Left rsaerr → Left $ show rsaerr
-          Right False → Left "Failed to verify signature on secretMessage"
-          Right True
-            | spub == r → case dec ms of
-              Left rsaerr → Left $ show rsaerr
-              Right bs → fmap (sendpub,) $ case t of
-                OnlineChange → Right . OnlineStatus $ B.decode bs
-                FriendChange → Right . FriendStatus $ B.decode bs
-            | otherwise → Left "No handling of messages to others yet"
-
-            where
-              dec = decrypt spriv . LB.fromStrict
