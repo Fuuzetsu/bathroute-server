@@ -79,9 +79,16 @@ share [mkPersist sqlSettings, mkMigrate "migrateAll"] [persistLowerCase|
     creatorid UserId
     deriving Eq Show
   Alias
-    aliasid Int
-    ownerid UserId
+    name String
+    ownerKey ByteString
     deriving Eq Show
+  PendingFriends
+    adder UserId
+    addee UserId
+    deriving Eq Show
+  Friends
+    listOwner UserId
+    friendsWith [UserId]
 |]
 
 -- | Lazy ByteString to Text
@@ -144,13 +151,16 @@ data ServerComm = ServerComm { senderKey ∷ PublicKey
                              , serverMessage ∷ ByteString
                              }
 
-data ServerMessage = ServerMessage { requestType ∷ Request
+data RequestType = OnlineChange | FriendChange
+
+data ServerMessage = ServerMessage { requestType ∷ RequestType
                                    , secretMessage ∷ ByteString
                                    , messageSignature ∷ ByteString
                                      -- ^ Signed contents of the message
                                    , messageRecipient ∷ PublicKey
                                    }
 
+$(derive makeBinary ''RequestType)
 $(derive makeBinary ''AliasRequest)
 $(derive makeBinary ''Request)
 $(derive makeBinary ''OnlineRequest)
@@ -164,4 +174,10 @@ instance Binary ServerMessage where
   put (ServerMessage t m s r) = put (t, m, s, r)
   get = liftM4 ServerMessage get get get get
 
+$(deriveJSON defaultOptions ''ServerComm)
+
 type ServerKeys = (PublicKey, PrivateKey)
+data Status = OK | Failed String deriving (Show, Eq)
+
+$(derive makeBinary ''Status)
+$(deriveJSON defaultOptions ''Status)
