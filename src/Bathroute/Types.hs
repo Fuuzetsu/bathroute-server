@@ -70,7 +70,7 @@ newtype ByteString64 = ByteString64 { unByteString64 ∷ ByteString }
 
 share [mkPersist sqlSettings, mkMigrate "migrateAll"] [persistLowerCase|
   User
-    publickey ByteString
+    publicKey ByteString
     deriving Eq Show
   Event
     latitude Double
@@ -89,6 +89,7 @@ share [mkPersist sqlSettings, mkMigrate "migrateAll"] [persistLowerCase|
   Friends
     listOwner UserId
     friendsWith [UserId]
+    deriving Eq Show
 |]
 
 -- | Lazy ByteString to Text
