@@ -19,7 +19,7 @@ executable bathroute-server
 
   build-depends:       base >=4.6 && <5, network-conduit,
                        conduit, bytestring, aeson, transformers,
-                       containers, stm, stm-conduit
+                       containers, stm, stm-conduit, utf8-string
 
   hs-source-dirs:      src
   default-language:    Haskell2010

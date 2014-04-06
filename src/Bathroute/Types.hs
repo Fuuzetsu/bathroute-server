@@ -62,6 +62,7 @@ newtype AliasRequest = DesiredAlias String deriving (Show, Eq)
 data Request = OnlineStatus OnlineRequest
              | FriendStatus FriendAction
              | AliasStatus AliasRequest
+               deriving (Show, Eq)
 
 
 -- | A message to the server is nothing but a 'Request' along with
@@ -69,7 +70,7 @@ data Request = OnlineStatus OnlineRequest
 -- forward the message to.
 data ServerMessage = ServerMessage { recipient ∷ User
                                    , request ∷ Request
-                                   }
+                                   } deriving (Show, Eq)
 
 -- | Handy type alias for an internal represantation of list of clients
 -- that we store in our 'Server' 'Map'.

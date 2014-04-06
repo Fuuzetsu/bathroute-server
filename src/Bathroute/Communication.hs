@@ -19,6 +19,7 @@ import Control.Concurrent.STM
 import Control.Exception (bracket, bracket_)
 import Control.Monad.IO.Class (liftIO)
 import Data.Aeson
+import Data.ByteString.UTF8 (toString)
 import Data.ByteString.Lazy (toStrict, ByteString)
 import Data.Conduit
 import Data.Conduit.Network
@@ -105,10 +106,11 @@ client s a = let (src, sink) = (appSource a, appSink a) in do
   t ← liftIO myThreadId
   c ← liftIO . atomically $ newTMChan
   let h = awaitForever $ \m → case decodeStrict m of
-        Nothing → liftIO $ putStrLn "Failed to decode message in client handler"
+        Nothing → liftIO . putStrLn $
+                  "Failed to decode message in client handler: " ++ toString m
         Just ms@(ServerMessage rid req) → liftIO $ case rid of
-          User 0 → handler s ms
-          u → sendMsg s u req
+          User 0 → liftIO (print ms) >> handler s ms
+          u → liftIO (print ms) >> sendMsg s u req
 
       tx = toStrict `mapOutput` sourceTMChan c $$ sink
       rx = src $$ h
