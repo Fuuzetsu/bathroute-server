@@ -12,21 +12,22 @@
 -- Handles communication with the clients.
 module Bathroute.Communication where
 
-import Bathroute.Types
-import Control.Applicative ((<$>))
-import Control.Concurrent hiding (yield)
-import Control.Concurrent.STM
-import Control.Exception (bracket, bracket_)
-import Control.Monad.IO.Class (liftIO)
-import Data.Aeson
-import Data.ByteString.UTF8 (toString)
-import Data.ByteString.Lazy.Char8 (pack, append)
-import Data.ByteString.Lazy (toStrict, ByteString)
-import Data.Conduit
-import Data.Conduit.Network
-import Data.Conduit.TMChan (newTMChan, writeTMChan, sourceTMChan)
-import Data.Map
-import Data.Maybe
+import           Bathroute.Types
+import           Control.Concurrent hiding (yield)
+import           Control.Concurrent.STM
+import           Control.Exception (bracket, bracket_)
+import           Control.Monad
+import           Control.Monad.IO.Class (liftIO)
+import           Data.Aeson
+import           Data.ByteString.Lazy (toStrict, ByteString)
+import           Data.ByteString.Lazy.Char8 (pack, append)
+import           Data.ByteString.UTF8 (toString)
+import           Data.Conduit
+import           Data.Conduit.Network
+import           Data.Conduit.TMChan (newTMChan, writeTMChan, sourceTMChan)
+import qualified Data.List as L
+import           Data.Map
+import           Data.Maybe
 
 -- | Main server 'ResourceT'. Uses the default 'serverS'.
 server ∷ Server → ResourceT IO ()
@@ -34,7 +35,7 @@ server = runTCPServer serverS . client
 
 -- | Initial server, no clients
 makeServer ∷ IO Server
-makeServer = Server <$> newMVar empty
+makeServer = liftM2 Server (newMVar []) (newMVar empty)
 
 -- | Default 'serverSettings' with the default port 7777 and 'HostAny'.
 serverS ∷ Monad m ⇒ ServerSettings m
@@ -48,13 +49,14 @@ findKeyFromValue f = listToMaybe . assocs . Data.Map.filter f
 -- | Attempts to find a user entry (that is @(ThreadId, UserVal)@) in a
 -- map of connected clients, given only a User identifier.
 findThreadId ∷ Server → User → IO (Maybe (ThreadId, UserVal))
-findThreadId (Server s) i = withMVar s $ return . findKeyFromValue f
+findThreadId (Server { _clients = s }) i =
+  withMVar s $ return . findKeyFromValue f
   where
     f = (== Just i) . fst
 
 -- | Attempts to send a message to specified user.
 sendMsg ∷ Server → User → Request → IO ()
-sendMsg (Server s) u r = findThreadId (Server s) u >>= \case
+sendMsg sv@(Server { _clients = s }) u r = findThreadId sv u >>= \case
   Nothing → putStrLn
             (unwords ["Couldn't find", show u, "to send", show r, "to."])
             >> withMVar s (\m -> putStrLn (show $ fmap fst m))
@@ -76,12 +78,12 @@ updateOnline s u t r =
 -- assigned any user ID and has to ask for that separately if they wish to be
 -- messaged.
 addClient ∷ Server → ThreadId → (ByteString → STM ()) → IO ()
-addClient (Server s) t f =
+addClient (Server { _clients = s }) t f =
   modifyMVar_ s $ return . insert t (Nothing, f)
 
 -- | Kills and removes a client connection from server map.
 removeClient ∷ Server → ThreadId → IO ()
-removeClient (Server s) t = modifyMVar_ s $ return . delete t
+removeClient (Server { _clients = s }) t = modifyMVar_ s $ return . delete t
 
 -- | Helper specifying actions to run over the 'Server' for each client.
 withClient ∷ Server → ThreadId → (ByteString → STM ()) → IO a → IO a
@@ -99,6 +101,14 @@ handler s t m@(ServerMessage u req) =
     OnlineStatus x → updateOnline s u t x >> return ()
     FriendStatus x → handleFriend s u x >> return ()
     AliasStatus x → insertAlias s u x >> return ()
+    EventStatus x → handleEvent s x
+
+-- | Handles aall 'EventRequest's from the clients.
+handleEvent ∷ Server → EventRequest → IO ()
+handleEvent (Server { _events = e }) r =
+  modifyMVar_ e $ return . \evs → case r of
+  EventAdd ev → ev : evs
+  EventDelete ev → ev `L.delete` evs
 
 -- | Creates and forks each client as they come in.
 client ∷ Server → Application (ResourceT IO)

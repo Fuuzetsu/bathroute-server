@@ -30,8 +30,13 @@ type Longitude = Double
 -- | A location is just @('Latitude', 'Longitude')@.
 type Location = (Latitude, Longitude)
 
--- | Each event has a 'Location' and a 'User' that created it.
-data Event = Event Latitude Longitude User
+-- | Each event has a 'Location', a 'User' that created it and a
+-- description of the event.
+data Event = Event Location User String deriving (Eq, Show)
+
+data EventRequest = EventAdd Event
+                  | EventDelete Event
+                  deriving (Show, Eq)
 
 -- | Each @Alias@ belongs to a 'User'.
 data Alias = Alias String User
@@ -62,6 +67,7 @@ newtype AliasRequest = DesiredAlias String deriving (Show, Eq)
 data Request = OnlineStatus OnlineRequest
              | FriendStatus FriendAction
              | AliasStatus AliasRequest
+             | EventStatus EventRequest
                deriving (Show, Eq)
 
 
@@ -78,17 +84,20 @@ type UserVal = (Maybe User, LB.ByteString → STM ())
 
 -- | Server datatype keeping track of who's connected, how to talk to
 -- them and their 'User' IDs if any.
-newtype Server = Server {
-  _clients ∷ MVar (Map ThreadId UserVal)
-  }
+data Server =
+  Server { _events ∷ MVar [Event]
+         , _clients ∷ MVar (Map ThreadId UserVal)
+         }
 
 -- | A simple 'Status' data type that we may in the future use to
 -- indicate success or failure of client requests.
 data Status = OK | Failed String deriving (Show, Eq)
 
+$(deriveJSON defaultOptions ''Event)
 $(deriveJSON defaultOptions ''OnlineRequest)
 $(deriveJSON defaultOptions ''AliasRequest)
 $(deriveJSON defaultOptions ''FriendAction)
+$(deriveJSON defaultOptions ''EventRequest)
 $(deriveJSON defaultOptions ''Request)
 $(deriveJSON defaultOptions ''User)
 $(deriveJSON defaultOptions ''ServerMessage)
