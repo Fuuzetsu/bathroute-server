@@ -44,7 +44,7 @@ newtype Friends = Friends (Map User [User])
 data FriendAction = Add User
                   | Remove User
                   | Block User
-                  | Share User
+                  | Share Location
                   deriving (Eq, Show)
 
 -- | User status change.

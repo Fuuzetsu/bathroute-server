@@ -20,6 +20,7 @@ import Control.Exception (bracket, bracket_)
 import Control.Monad.IO.Class (liftIO)
 import Data.Aeson
 import Data.ByteString.UTF8 (toString)
+import Data.ByteString.Lazy.Char8 (pack, append)
 import Data.ByteString.Lazy (toStrict, ByteString)
 import Data.Conduit
 import Data.Conduit.Network
@@ -53,21 +54,19 @@ findThreadId (Server s) i = withMVar s $ return . findKeyFromValue f
 
 -- | Attempts to send a message to specified user.
 sendMsg ∷ Server → User → Request → IO ()
-sendMsg s u r = findThreadId s u >>= \case
-  Nothing → return ()
+sendMsg (Server s) u r = findThreadId (Server s) u >>= \case
+  Nothing → putStrLn
+            (unwords ["Couldn't find", show u, "to send", show r, "to."])
+            >> withMVar s (\m -> putStrLn (show $ fmap fst m))
   Just (t, (u', f)) → do
     putStrLn $ concat ["Sending message to (", show u', "): ", show t]
-    atomically . f $ encode r
+    atomically . f $ encode r `append` pack "\n" -- readLine() blocks until \n
 
--- | Brings a user online. Currently any new clients claiming the same ID
--- will overwrite users connected under the same ID. This is TODO.
-updateOnline ∷ Server → User → OnlineRequest → IO Status
-updateOnline s u r = findThreadId s u >>= \case
-  Nothing → return $ Failed "Couldn't find coresponding thread in updateOnline."
-  Just (t, (_, f)) → do
-    m ← takeMVar $ _clients s
-    putMVar (_clients s) $ update (const $ Just (usr, f)) t m
-    return OK
+-- | Brings a user online. Currently there is no resolution about users
+-- claiming the same IDs.
+updateOnline ∷ Server → User → ThreadId → OnlineRequest → IO ()
+updateOnline s u t r =
+  modifyMVar_ (_clients s) $ return . update (\(_, f) → Just (usr, f)) t
   where
     usr = case r of
       Offline → Nothing
@@ -94,23 +93,22 @@ withForkIO_ ∷ IO () → IO a → IO a
 withForkIO_ act = bracket (forkIO act) killThread . const
 
 -- | Handles messages directed at server itself (User 0).
-handler ∷ Server → ServerMessage → IO ()
-handler s (ServerMessage u req) = case req of
-  OnlineStatus x → updateOnline s u x >> return ()
-  FriendStatus x → insertFriend s u x >> return ()
-  AliasStatus x → insertAlias s u x >> return ()
+handler ∷ Server → ThreadId → ServerMessage → IO ()
+handler s t m@(ServerMessage u req) =
+  putStrLn ("Handling " ++ show m ) >> case req of
+    OnlineStatus x → updateOnline s u t x >> return ()
+    FriendStatus x → handleFriend s u x >> return ()
+    AliasStatus x → insertAlias s u x >> return ()
 
 -- | Creates and forks each client as they come in.
 client ∷ Server → Application (ResourceT IO)
 client s a = let (src, sink) = (appSource a, appSink a) in do
   t ← liftIO myThreadId
   c ← liftIO . atomically $ newTMChan
-  let h = awaitForever $ \m → case decodeStrict m of
-        Nothing → liftIO . putStrLn $
+  let h = awaitForever $ \m → liftIO $ case decodeStrict m of
+        Nothing → putStrLn $
                   "Failed to decode message in client handler: " ++ toString m
-        Just ms@(ServerMessage rid req) → liftIO $ case rid of
-          User 0 → liftIO (print ms) >> handler s ms
-          u → liftIO (print ms) >> sendMsg s u req
+        Just ms → handler s t ms
 
       tx = toStrict `mapOutput` sourceTMChan c $$ sink
       rx = src $$ h
@@ -124,9 +122,9 @@ insertAlias _sv _rid (DesiredAlias _s) =
   return $ Failed "insertAlias not implemented"
 
 -- | Handles friend requests and anything related. Not implemented.
-insertFriend ∷ Server → User → FriendAction → IO Status
-insertFriend _sv _rid fa = case fa of
+handleFriend ∷ Server → User → FriendAction → IO Status
+handleFriend s u fa = case fa of
   Add _k → return $ Failed "Adding not implemented"
   Remove _k → return $ Failed "Removing not implemented"
   Block _k → return $ Failed "Blocking not implemented"
-  Share _k → return $ Failed "Sharing not implemented"
+  Share _ → sendMsg s u (FriendStatus fa) >> return OK
