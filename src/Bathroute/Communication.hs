@@ -55,14 +55,16 @@ findThreadId (Server { _clients = s }) i =
     f = (== Just i) . fst
 
 -- | Attempts to send a message to specified user.
-sendMsg ∷ Server → User → Request → IO ()
+sendMsg ∷ (Show a, ToJSON a) ⇒ Server → User → a → IO ()
 sendMsg sv@(Server { _clients = s }) u r = findThreadId sv u >>= \case
   Nothing → putStrLn
             (unwords ["Couldn't find", show u, "to send", show r, "to."])
             >> withMVar s (\m -> putStrLn (show $ fmap fst m))
   Just (t, (u', f)) → do
-    putStrLn $ concat ["Sending message to (", show u', "): ", show t]
-    atomically . f $ encode r `append` pack "\n" -- readLine() blocks until \n
+    let ms = encode r
+    putStrLn $ concat [ "Sending ", show ms
+                      , " to (", show u', "): ", show t]
+    atomically . f $ ms `append` pack "\n" -- readLine() blocks until \n
 
 -- | Brings a user online. Currently there is no resolution about users
 -- claiming the same IDs.
@@ -101,14 +103,17 @@ handler s t m@(ServerMessage u req) =
     OnlineStatus x → updateOnline s u t x >> return ()
     FriendStatus x → handleFriend s u x >> return ()
     AliasStatus x → insertAlias s u x >> return ()
-    EventStatus x → handleEvent s x
+    EventStatus x → handleEvent s u x
+    -- We never expect to see these sent in.
+    EventList _ → return ()
 
 -- | Handles aall 'EventRequest's from the clients.
-handleEvent ∷ Server → EventRequest → IO ()
-handleEvent (Server { _events = e }) r =
-  modifyMVar_ e $ return . \evs → case r of
-  EventAdd ev → ev : evs
-  EventDelete ev → ev `L.delete` evs
+handleEvent ∷ Server → User → EventRequest → IO ()
+handleEvent s@(Server { _events = e }) u r =
+  modifyMVar_ e $ \evs → case r of
+  EventAdd ev → return $ ev : evs
+  EventDelete ev → return $ ev `L.delete` evs
+  EventGet → sendMsg s u (EventList evs) >> return []
 
 -- | Creates and forks each client as they come in.
 client ∷ Server → Application (ResourceT IO)

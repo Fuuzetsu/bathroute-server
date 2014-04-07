@@ -32,10 +32,14 @@ type Location = (Latitude, Longitude)
 
 -- | Each event has a 'Location', a 'User' that created it and a
 -- description of the event.
-data Event = Event Location User String deriving (Eq, Show)
+data Event = Event { _evLocation ∷ Location
+                   , _evCreator ∷ User
+                   , _evDescription ∷ String
+                   } deriving (Eq, Show)
 
 data EventRequest = EventAdd Event
                   | EventDelete Event
+                  | EventGet
                   deriving (Show, Eq)
 
 -- | Each @Alias@ belongs to a 'User'.
@@ -68,6 +72,7 @@ data Request = OnlineStatus OnlineRequest
              | FriendStatus FriendAction
              | AliasStatus AliasRequest
              | EventStatus EventRequest
+             | EventList [Event]
                deriving (Show, Eq)
 
 
