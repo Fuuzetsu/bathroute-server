@@ -60,7 +60,7 @@ broadcast sv@(Server { _clients = s }) r = do
   putStrLn $ unwords ["Sending", show $ encode r, "to all clients."]
   withMVar s $ atomically . mapM_ (send $ encode r) . elems
   where
-    send m (_, f) = f m
+    send m (_, f) = f m `append` pack "\n"
 
 -- | Attempts to send a message to specified user.
 sendMsg ∷ (Show a, ToJSON a) ⇒ Server → User → a → IO ()
