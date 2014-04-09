@@ -56,7 +56,8 @@ findThreadId (Server { _clients = s }) i =
 
 -- | Sends a message to every user connected.
 broadcast ∷ (Show a, ToJSON a) ⇒ Server → a → IO ()
-broadcast sv@(Server { _clients = s }) r =
+broadcast sv@(Server { _clients = s }) r = do
+  putStrLn $ unwords ["Sending", show $ encode r, "to all clients."]
   withMVar s $ atomically . mapM_ (send $ encode r) . elems
   where
     send m (_, f) = f m
