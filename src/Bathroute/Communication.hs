@@ -54,6 +54,13 @@ findThreadId (Server { _clients = s }) i =
   where
     f = (== Just i) . fst
 
+-- | Sends a message to every user connected.
+broadcast ∷ (Show a, ToJSON a) ⇒ Server → a → IO ()
+broadcast sv@(Server { _clients = s }) r =
+  withMVar s $ atomically . mapM_ (send $ encode r) . elems
+  where
+    send m (_, f) = f m
+
 -- | Attempts to send a message to specified user.
 sendMsg ∷ (Show a, ToJSON a) ⇒ Server → User → a → IO ()
 sendMsg sv@(Server { _clients = s }) u r = findThreadId sv u >>= \case
@@ -111,9 +118,11 @@ handler s t m@(ServerMessage u req) =
 handleEvent ∷ Server → User → EventRequest → IO ()
 handleEvent s@(Server { _events = e }) u r =
   modifyMVar_ e $ \evs → case r of
-  EventAdd ev → return $ ev : evs
-  EventDelete ev → return $ ev `L.delete` evs
-  EventGet → sendMsg s u (EventList evs) >> return []
+    EventAdd ev → let ne = ev : evs
+                  in broadcast s (EventList ne) >> return ne
+    EventDelete ev → let ne = ev `L.delete` evs
+                     in broadcast s (EventList ne) >> return ne
+    EventGet → sendMsg s u (EventList evs) >> return []
 
 -- | Creates and forks each client as they come in.
 client ∷ Server → Application (ResourceT IO)
