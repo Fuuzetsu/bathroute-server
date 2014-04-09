@@ -88,8 +88,11 @@ updateOnline s u t r =
 -- assigned any user ID and has to ask for that separately if they wish to be
 -- messaged.
 addClient ∷ Server → ThreadId → (ByteString → STM ()) → IO ()
-addClient (Server { _clients = s }) t f =
+addClient sv@(Server { _events = ev, _clients = s }) t f = do
+  withMVar ev $ \evs → atomically $ send (encode $ EventList evs)
   modifyMVar_ s $ return . insert t (Nothing, f)
+    where
+      send m = f $ m `append` pack "\n"
 
 -- | Kills and removes a client connection from server map.
 removeClient ∷ Server → ThreadId → IO ()
