@@ -30,16 +30,16 @@ import           Data.Map
 import           Data.Maybe
 
 -- | Main server 'ResourceT'. Uses the default 'serverS'.
-server ∷ Server → ResourceT IO ()
-server = runTCPServer serverS . client
+server ∷ Int → Server → ResourceT IO ()
+server p = runTCPServer (serverS p) . client
 
 -- | Initial server, no clients
 makeServer ∷ IO Server
 makeServer = liftM2 Server (newMVar []) (newMVar empty)
 
 -- | Default 'serverSettings' with the default port 7777 and 'HostAny'.
-serverS ∷ Monad m ⇒ ServerSettings m
-serverS = serverSettings 7777 HostAny
+serverS ∷ Monad m ⇒ Int → ServerSettings m
+serverS p = serverSettings p HostAny
 
 -- | Tries to return first (k,v) found that matches the filter
 -- function.

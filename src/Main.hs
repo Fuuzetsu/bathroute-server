@@ -1,4 +1,5 @@
 {-# LANGUAGE UnicodeSyntax #-}
+{-# LANGUAGE LambdaCase #-}
 
 -- |
 -- Module      :  Main
@@ -13,6 +14,10 @@ module Main where
 
 import Bathroute.Communication
 import Data.Conduit
+import System.Environment
 
 main ∷ IO ()
-main = makeServer >>= runResourceT . server
+main = do
+  getArgs >>= \case
+    [p] → makeServer >>= runResourceT . server (read p)
+    _ → makeServer >>= runResourceT . server 7777
