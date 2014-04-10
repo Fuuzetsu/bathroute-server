@@ -118,7 +118,7 @@ handler s t m@(ServerMessage u req) =
     -- We never expect to see these sent in.
     EventList _ → return ()
 
--- | Handles aall 'EventRequest's from the clients.
+-- | Handles all 'EventRequest's from the clients.
 handleEvent ∷ Server → User → EventRequest → IO ()
 handleEvent s@(Server { _events = e }) u r =
   modifyMVar_ e $ \evs → case r of
